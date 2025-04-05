@@ -651,7 +651,7 @@ export default function FreelancerDashboard() {
                             min={1}
                             max={project.budget}
                           />
-                          <p className="text-xs text-muted-foreground mt-1">
+                          <p className="text-sm text-muted-foreground mt-1">
                             Project budget: ₹{project.budget}
                           </p>
                         </div>
