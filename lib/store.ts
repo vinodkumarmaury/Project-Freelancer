@@ -2,11 +2,13 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export interface ProjectFile {
+  id: string;
   name: string;
   size: number;
   type: string;
   url: string;
   uploadDate: string;
+  uploadedBy: "client" | "developer";
 }
 
 export interface Project {
@@ -23,6 +25,12 @@ export interface Project {
   submissionUrl?: string;
   paymentStatus?: "pending" | "paid";
   projectFiles?: ProjectFile[];
+  fileUpdates?: {
+    timestamp: string;
+    action: "upload" | "delete" | "update";
+    fileId: string;
+    message: string;
+  }[];
 }
 
 export interface Bid {
@@ -83,6 +91,14 @@ interface ProjectStore {
   getFreelancerRating: (freelancerId: string) => number;
   updatePaymentStatus: (projectId: string, status: "pending" | "paid") => void;
   updateFreelancerEarnings: (freelancerId: string, amount: number) => void;
+
+  addProjectFile: (projectId: string, file: Omit<ProjectFile, "id">) => void;
+  deleteProjectFile: (projectId: string, fileId: string, deletedBy: "client" | "developer") => void;
+
+  updateProject: (projectId: string, updates: Partial<Project>) => void;
+  deleteProject: (projectId: string) => void;
+  updateBid: (bidId: string, updates: Partial<Bid>) => void;
+  deleteBid: (bidId: string) => void;
 }
 
 export const useProjectStore = create<ProjectStore>()(
@@ -206,6 +222,83 @@ export const useProjectStore = create<ProjectStore>()(
               : freelancer
           )
         })),
+
+      addProjectFile: (projectId, file) => set((state) => {
+        const fileWithId = { ...file, id: Date.now().toString() };
+        
+        return {
+          projects: state.projects.map(project => 
+            project.id === projectId 
+              ? { 
+                  ...project, 
+                  projectFiles: [
+                    ...(project.projectFiles || []), 
+                    fileWithId
+                  ],
+                  fileUpdates: [
+                    ...(project.fileUpdates || []),
+                    {
+                      timestamp: new Date().toISOString(),
+                      action: "upload",
+                      fileId: fileWithId.id,
+                      message: `${file.uploadedBy === "client" ? "Client" : "Developer"} uploaded ${file.name}`
+                    }
+                  ] 
+                } 
+              : project
+          )
+        };
+      }),
+
+      deleteProjectFile: (projectId, fileId, deletedBy) => set((state) => {
+        const project = state.projects.find(p => p.id === projectId);
+        if (!project || !project.projectFiles) return state;
+        
+        const fileToDelete = project.projectFiles.find(f => f.id === fileId);
+        if (!fileToDelete) return state;
+        
+        return {
+          projects: state.projects.map(project => 
+            project.id === projectId 
+              ? { 
+                  ...project, 
+                  projectFiles: project.projectFiles!.filter(f => f.id !== fileId),
+                  fileUpdates: [
+                    ...(project.fileUpdates || []),
+                    {
+                      timestamp: new Date().toISOString(),
+                      action: "delete",
+                      fileId: fileId,
+                      message: `${deletedBy === "client" ? "Client" : "Developer"} deleted ${fileToDelete.name}`
+                    }
+                  ]
+                } 
+              : project
+          )
+        };
+      }),
+
+      updateProject: (projectId, updates) => set((state) => ({
+        projects: state.projects.map(project => 
+          project.id === projectId ? { ...project, ...updates } : project
+        )
+      })),
+
+      deleteProject: (projectId) => set((state) => ({
+        projects: state.projects.filter(project => project.id !== projectId),
+        bids: state.bids.filter(bid => bid.projectId !== projectId),
+        projectFeedbacks: state.projectFeedbacks.filter(fb => fb.projectId !== projectId)
+      })),
+
+      updateBid: (bidId, updates) => set((state) => ({
+        bids: state.bids.map(bid => 
+          bid.id === bidId ? { ...bid, ...updates } : bid
+        )
+      })),
+
+      deleteBid: (bidId) => set((state) => ({
+        bids: state.bids.filter(bid => bid.id !== bidId)
+      })),
     }),
     {
       name: 'project-store',

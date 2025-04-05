@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Star, PlusCircle, ArrowRight, MessageCircle } from "lucide-react";
-import { useProjectStore, type Project, type Bid, type ProjectFeedback } from "@/lib/store";
+import { Star, PlusCircle, ArrowRight, MessageCircle, Upload, File, Download, X } from "lucide-react";
+import { useProjectStore, type Project, type Bid, type ProjectFeedback, type ProjectFile } from "@/lib/store";
 import { loadStripe } from '@stripe/stripe-js';
 import Chat from "@/components/Chat";
 import FileUpload from "@/components/FileUpload";
@@ -55,7 +55,9 @@ export default function ClientDashboard() {
     approveSubmission,
     addProjectFeedback,
     updateFreelancerRating,
-    updatePaymentStatus
+    updatePaymentStatus,
+    addProjectFile,
+    deleteProjectFile
   } = useProjectStore();
   
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -73,6 +75,8 @@ export default function ClientDashboard() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [showFileUpload, setShowFileUpload] = useState<string | null>(null);
 
   const skillOptions = [
     { label: "React", value: "React" },
@@ -135,10 +139,29 @@ export default function ClientDashboard() {
       status: "open",
       clientId: "current-user-id",
       createdAt: new Date().toISOString(),
+      projectFiles: [],
+      fileUpdates: []
     };
 
     addProject(newProject);
+    
+    if (uploadedFiles.length > 0) {
+      uploadedFiles.forEach(file => {
+        const fileToAdd: Omit<ProjectFile, "id"> = {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          url: URL.createObjectURL(file),
+          uploadDate: new Date().toISOString(),
+          uploadedBy: "client"
+        };
+        
+        addProjectFile(newProject.id, fileToAdd);
+      });
+    }
+    
     setIsDialogOpen(false);
+    setUploadedFiles([]);
   };
 
   const handleAcceptBid = (bid: Bid) => {
@@ -290,7 +313,7 @@ export default function ClientDashboard() {
               <div>
                 <label className="text-sm font-medium">Project Files (Optional)</label>
                 <div className="mt-2">
-                  <FileUpload onUpload={(files) => console.log('Uploaded files:', files)} />
+                  <FileUpload onUpload={setUploadedFiles} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   Upload any relevant files for the project requirements
@@ -368,65 +391,83 @@ export default function ClientDashboard() {
 
                 {project.status === "in_progress" && (
                   <div className="mt-4 border-t pt-4">
-                    <h4 className="text-sm font-medium mb-2">Project Progress</h4>
-                    <div className="relative">
-                      {/* Progress bar */}
-                      <div className="h-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-12">
-                        <div 
-                          className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-700"
-                          style={{ 
-                            width: project.submissionStatus === "submitted" 
-                              ? "75%" 
-                              : project.status === "in_progress" 
-                                ? "50%" 
-                                : "25%" 
-                          }}
-                        ></div>
+                    <h4 className="font-semibold text-sm mb-2 flex justify-between items-center">
+                      <span>Project Files</span>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setShowFileUpload(project.id)} 
+                        className="text-xs"
+                      >
+                        <Upload className="h-3 w-3 mr-1" />
+                        Upload File
+                      </Button>
+                    </h4>
+                    
+                    {showFileUpload === project.id && (
+                      <div className="mb-4 p-3 border rounded-md bg-muted/30">
+                        <FileUpload 
+                          onUpload={(files) => {
+                            files.forEach(file => {
+                              const fileToAdd: Omit<ProjectFile, "id"> = {
+                                name: file.name,
+                                size: file.size,
+                                type: file.type,
+                                url: URL.createObjectURL(file), 
+                                uploadDate: new Date().toISOString(),
+                                uploadedBy: "client"
+                              };
+                              
+                              addProjectFile(project.id, fileToAdd);
+                            });
+                            setShowFileUpload(null);
+                          }} 
+                        />
                       </div>
-                      
-                      {/* Progress milestones with improved positioning */}
-                      <div className="w-full absolute top-[-8px]">
-                        {["Bid Accepted", "In Progress", "Submitted", "Completed"].map((milestone, index) => {
-                          const isActive = (
-                            (index === 0) || 
-                            (index === 1 && project.status === "in_progress") ||
-                            (index === 2 && project.submissionStatus === "submitted") ||
-                            (index === 3 && project.status === "completed")
-                          );
-                          
-                          // Position dots properly at 0%, 33%, 66%, and 100%
-                          const positions = [0, 33, 66, 100];
-                          
-                          return (
-                            <div 
-                              key={milestone}
-                              className="absolute"
-                              style={{  
-                                top: "2.8px",
-                                left: `${positions[index]}%`,
-                                width: index === 0 ? '80px' : index === 3 ? '80px' : '90px',
-                                marginLeft: index === 0 ? '-5px' : index === 3 ? '-75px' : '-45px'
-                              }}
-                            >
-                              <div 
-                                className={`w-4 h-4 mx-auto rounded-full border-2 ${
-                                  isActive 
-                                    ? "bg-primary border-primary" 
-                                    : "bg-background border-gray-300 dark:border-gray-600"
-                                }`}
-                              ></div>
-                              <div 
-                                className={`text-center whitespace-normal text-xs mt-6 ${
-                                  isActive ? "font-medium text-primary" : "text-muted-foreground"
-                                }`}
-                              >
-                                {milestone}
-                              </div>
+                    )}
+                    
+                    {project.projectFiles && project.projectFiles.length > 0 ? (
+                      <div className="space-y-2 mt-2">
+                        {project.projectFiles.map((file) => (
+                          <div 
+                            key={file.id}
+                            className="flex items-center p-2 bg-muted/40 rounded-md hover:bg-muted transition-colors"
+                          >
+                            <div className="p-2 bg-primary/10 rounded-md mr-3">
+                              <File className="h-4 w-4 text-primary" />
                             </div>
-                          );
-                        })}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{file.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {(file.size / 1024).toFixed(1)} KB · {new Date(file.uploadDate).toLocaleDateString()}
+                                {file.uploadedBy === "developer" && " · Added by developer"}
+                              </p>
+                            </div>
+                            <div className="flex gap-1">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="ml-2"
+                                asChild
+                              >
+                                <a href={file.url} download={file.name} target="_blank" rel="noopener noreferrer">
+                                  <Download className="h-4 w-4" />
+                                </a>
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => deleteProjectFile(project.id, file.id, "client")}
+                              >
+                                <X className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No files uploaded yet.</p>
+                    )}
                   </div>
                 )}
 
