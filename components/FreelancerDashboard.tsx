@@ -11,11 +11,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Slider } from "@/components/ui/slider";
-import { GithubIcon, LinkedinIcon, Globe, Star, Search, CreditCard, File, Download, Upload, X } from "lucide-react";
+import { GithubIcon, LinkedinIcon, Globe, Star, Search, CreditCard, File, Download, Upload, X, Pencil, Trash2, ExternalLink, MessageCircle } from "lucide-react";
 import { useProjectStore, type Project, type Bid, type ProjectFile } from "@/lib/store";
 import { toast } from "react-toastify";
 import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from "recharts";
 import FileUpload from "@/components/FileUpload";
+import { useRouter } from "next/navigation";
+import Chat from "@/components/Chat";
 
 // Define the missing skillLevels object
 const skillLevels: Record<string, number> = {
@@ -72,6 +74,8 @@ export default function FreelancerDashboard() {
     getProjectFeedbackForFreelancer,
     addProjectFile,
     deleteProjectFile,
+    updateBid,
+    deleteBid,
     freelancers, // Add this
   } = useProjectStore();
   const [rating, setRating] = useState(4.5);
@@ -94,6 +98,10 @@ export default function FreelancerDashboard() {
     { name: "May", earnings: 0 },
     { name: "Jun", earnings: 0 },
   ]);
+
+  const [bidToEdit, setBidToEdit] = useState<Bid | null>(null);
+  const [isEditBidDialogOpen, setIsEditBidDialogOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   const currentFreelancer = freelancers.find(f => f.id === "current-freelancer-id");
   const totalEarnings = currentFreelancer?.totalEarnings || 0;
@@ -162,6 +170,23 @@ export default function FreelancerDashboard() {
     setSubmissionUrl("");
   };
 
+  const handleEditBid = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!bidToEdit) return;
+
+    const formData = new FormData(e.currentTarget);
+
+    const updatedBid: Partial<Bid> = {
+      amount: Number(formData.get("amount")),
+      timeline: Number(formData.get("timeline")),
+      proposal: formData.get("proposal") as string
+    };
+
+    updateBid(bidToEdit.id, updatedBid);
+    setBidToEdit(null);
+    setIsEditBidDialogOpen(false);
+  };
+
   const handleSaveProject = (projectId: string) => {
     const savedProjects = JSON.parse(localStorage.getItem("savedProjects") || "[]");
     localStorage.setItem("savedProjects", JSON.stringify([...savedProjects, projectId]));
@@ -185,6 +210,8 @@ export default function FreelancerDashboard() {
     )
     .filter((project) => filterSkill === "all" || project.skills.includes(filterSkill))
     .sort((a, b) => (sortBy === "budget" ? b.budget - a.budget : b.timeline - a.timeline));
+
+  const router = useRouter();
 
   return (
     <div className="space-y-8">
@@ -308,7 +335,7 @@ export default function FreelancerDashboard() {
               <p className="text-2xl font-bold">₹{totalEarnings.toLocaleString()}</p>
               {totalEarnings === 0 && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Complete projects to start earning!
+                  Complete projects and receive payments to start earning
                 </p>
               )}
             </div>
@@ -316,8 +343,17 @@ export default function FreelancerDashboard() {
               <CreditCard className="h-6 w-6 text-primary" />
             </div>
           </div>
-          <div className="h-[200px]">
-            {totalEarnings > 0 ? (
+          {totalEarnings === 0 ? (
+            <div className="h-[200px] flex items-center justify-center">
+              <div className="text-center">
+                <p className="text-muted-foreground mb-2">No earnings yet</p>
+                <Button variant="outline" size="sm" onClick={() => router.push('/#available-projects')}>
+                  Find Projects
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={earningsData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted-foreground/30" />
@@ -343,15 +379,8 @@ export default function FreelancerDashboard() {
                   />
                 </LineChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  <p className="text-sm">No earnings data yet</p>
-                  <p className="text-xs mt-1">Your earnings chart will appear here</p>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </Card>
       </motion.div>
 
@@ -369,11 +398,11 @@ export default function FreelancerDashboard() {
               return (
                 <Card key={project.id} className="hover-scale hover-shadow p-6">
                   <h3 className="text-lg font-semibold">{project.name}</h3>
-                  <p className="text-muted-foreground mt-2">{project.description}</p>
+                  <p className="text-muted-foreground mt-2 line-clamp-3">{project.description}</p>
                   <div className="mt-4">
                     <div className="flex flex-wrap gap-2">
                       {project.skills.map((skill) => (
-                        <Badge key={skill} variant="secondary">
+                        <Badge key={skill} variant="outline" className="hover-pop">
                           {skill}
                         </Badge>
                       ))}
@@ -381,13 +410,10 @@ export default function FreelancerDashboard() {
                   </div>
                   <div className="mt-4 space-y-2">
                     {project.submissionUrl && (
-                      <div>
-                        <Button variant="outline" size="sm" asChild>
-                          <a
-                            href={project.submissionUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" asChild className="w-full">
+                          <a href={project.submissionUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-3 w-3 mr-1" />
                             View Submission
                           </a>
                         </Button>
@@ -395,30 +421,27 @@ export default function FreelancerDashboard() {
                     )}
 
                     {feedback && (
-                      <>
+                      <div className="mt-4 p-4 border rounded-lg">
+                        <h4 className="font-medium text-sm mb-2">Client Feedback</h4>
+                        <div className="flex mb-2">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <Star
+                              key={star}
+                              className={`w-4 h-4 ${
+                                star <= feedback.rating ? "text-yellow-400 fill-current" : "text-gray-300"
+                              }`}
+                            />
+                          ))}
+                          <span className="ml-2 text-sm text-muted-foreground">
+                            {feedback.rating.toFixed(1)}/5
+                          </span>
+                        </div>
                         {feedback.comment && (
-                          <blockquote className="border-l-2 pl-4 italic text-muted-foreground">
+                          <blockquote className="text-sm italic text-muted-foreground">
                             &ldquo;{feedback.comment}&rdquo;
                           </blockquote>
                         )}
-                        {feedback.rating > 0 && (
-                          <div className="flex items-center gap-2">
-                            <div className="flex">
-                              {[...Array(5)].map((_, i) => (
-                                <Star
-                                  key={i}
-                                  className={`w-4 h-4 ${
-                                    i < Math.floor(feedback.rating)
-                                      ? "text-yellow-400 fill-current"
-                                      : "text-gray-300"
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                            <span className="text-sm text-muted-foreground">Client Rating</span>
-                          </div>
-                        )}
-                      </>
+                      </div>
                     )}
                   </div>
                 </Card>
@@ -426,62 +449,9 @@ export default function FreelancerDashboard() {
             })
           ) : (
             <p className="col-span-2 text-center text-muted-foreground py-8">
-              You haven&apos;t completed any projects yet
+              You haven&apos;t completed any projects yet. Projects will appear here once completed.
             </p>
           )}
-
-          {myCompletedProjects.length === 0 &&
-            completedProjects.map((project: CompletedProject) => (
-              <Card key={project.id} className="hover-scale hover-shadow p-6">
-                <h3 className="text-lg font-semibold">{project.name}</h3>
-                <p className="text-muted-foreground mt-2">{project.description}</p>
-                <div className="mt-4">
-                  <div className="flex flex-wrap gap-2">
-                    {project.technologies.map((tech: string) => (
-                      <Badge key={tech} variant="secondary">
-                        {tech}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={project.demoUrl} target="_blank" rel="noopener noreferrer">
-                        Live Demo
-                      </a>
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={project.githubUrl} target="_blank" rel="noopener noreferrer">
-                        GitHub
-                      </a>
-                    </Button>
-                  </div>
-                  {project.testimonial && (
-                    <blockquote className="border-l-2 pl-4 italic text-muted-foreground">
-                      &ldquo;{project.testimonial}&rdquo;
-                    </blockquote>
-                  )}
-                  {project.clientRating && (
-                    <div className="flex items-center gap-2">
-                      <div className="flex">
-                        {[...Array(5)].map((_, i) => (
-                          <Star
-                            key={i}
-                            className={`w-4 h-4 ${
-                              i < Math.floor(project.clientRating!)
-                                ? "text-yellow-400 fill-current"
-                                : "text-gray-300"
-                            }`}
-                          />
-                        ))}
-                      </div>
-                      <span className="text-sm text-muted-foreground">Client Rating</span>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            ))}
         </div>
       </motion.div>
 
@@ -742,40 +712,51 @@ export default function FreelancerDashboard() {
             if (!project) return null;
 
             return (
-              <Card key={`${project.id}-${bid.amount}`} className="p-6">
-                <h3 className="text-lg font-semibold">{project.name}</h3>
-                <div className="mt-4 space-y-2">
-                  <div className="flex justify-between">
-                    <span>Bid Amount:</span>
-                    <span>₹{bid.amount}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Timeline:</span>
-                    <span>{bid.timeline} days</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Status:</span>
-                    <Badge
-                      variant={
-                        bid.status === "accepted"
-                          ? "secondary"
-                          : bid.status === "rejected"
-                          ? "destructive"
-                          : "outline"
-                      }
+              <Card key={bid.id} className="p-6 hover-shadow">
+                <div className="flex justify-between">
+                  <h3 className="font-medium">{project?.name}</h3>
+                  {bid.status === "pending" && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        setBidToEdit(bid);
+                        setIsEditBidDialogOpen(true);
+                      }}
                     >
-                      {bid.status.charAt(0).toUpperCase() + bid.status.slice(1)}
-                    </Badge>
-                  </div>
-                  {bid.status === "accepted" && project.status === "in_progress" && (
-                    <Button
-                      className="w-full mt-4"
-                      variant="outline"
-                      onClick={() => setProjectToSubmit(project)}
-                    >
-                      Submit Project
+                      <Pencil className="h-4 w-4" />
                     </Button>
                   )}
+                </div>
+                <div className="mt-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm">Your Bid:</span>
+                    <span className="font-medium">₹{bid.amount}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm">Timeline:</span>
+                    <span>{bid.timeline} days</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{bid.proposal}</p>
+                  <div className="flex justify-between items-center mt-4">
+                    <Badge variant={bid.status === "accepted" ? "default" : "outline"}>
+                      {bid.status.charAt(0).toUpperCase() + bid.status.slice(1)}
+                    </Badge>
+                    {bid.status === "pending" && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => {
+                          if (confirm("Are you sure you want to delete this bid?")) {
+                            deleteBid(bid.id);
+                          }
+                        }}
+                        className="text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </Card>
             );
@@ -806,6 +787,73 @@ export default function FreelancerDashboard() {
           </DialogContent>
         </Dialog>
       )}
+
+      {bidToEdit && (
+        <Dialog open={isEditBidDialogOpen} onOpenChange={setIsEditBidDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Your Bid</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleEditBid} className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Bid Amount (₹)</label>
+                <Input
+                  type="number"
+                  name="amount"
+                  defaultValue={bidToEdit.amount}
+                  required
+                  min={1}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Timeline (days)</label>
+                <Input
+                  type="number"
+                  name="timeline"
+                  defaultValue={bidToEdit.timeline}
+                  required
+                  min={1}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Proposal</label>
+                <Textarea
+                  name="proposal"
+                  defaultValue={bidToEdit.proposal}
+                  required
+                  placeholder="Write your proposal..."
+                  rows={4}
+                />
+              </div>
+              <div className="flex justify-between">
+                <Button type="button" variant="outline" onClick={() => setIsEditBidDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Chat button */}
+      <motion.div
+        className="fixed bottom-4 right-4 z-40"
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+      >
+        <Button
+          className="rounded-full w-12 h-12 shadow-lg hover-glow"
+          onClick={() => setIsChatOpen(true)}
+        >
+          <MessageCircle className="h-5 w-5" />
+        </Button>
+      </motion.div>
+
+      {/* Chat component */}
+      <Chat isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} userRole="freelancer" />
     </div>
   );
 }

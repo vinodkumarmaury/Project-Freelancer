@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Star, PlusCircle, ArrowRight, MessageCircle, Upload, File, Download, X } from "lucide-react";
+import { Star, Pencil, PlusCircle,Trash2, ArrowRight,ExternalLink, MessageCircle, Upload, File, Download, X } from "lucide-react";
 import { useProjectStore, type Project, type Bid, type ProjectFeedback, type ProjectFile } from "@/lib/store";
 import { loadStripe } from '@stripe/stripe-js';
 import Chat from "@/components/Chat";
@@ -57,7 +57,8 @@ export default function ClientDashboard() {
     updateFreelancerRating,
     updatePaymentStatus,
     addProjectFile,
-    deleteProjectFile
+    deleteProjectFile,
+    updateProject
   } = useProjectStore();
   
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -77,6 +78,9 @@ export default function ClientDashboard() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [showFileUpload, setShowFileUpload] = useState<string | null>(null);
+
+  const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   const skillOptions = [
     { label: "React", value: "React" },
@@ -162,6 +166,25 @@ export default function ClientDashboard() {
     
     setIsDialogOpen(false);
     setUploadedFiles([]);
+  };
+
+  const handleEditProject = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!projectToEdit) return;
+    
+    const formData = new FormData(e.currentTarget);
+    
+    const updatedProject: Partial<Project> = {
+      name: formData.get("name") as string,
+      description: formData.get("description") as string,
+      budget: Number(formData.get("budget")),
+      timeline: Number(formData.get("timeline")),
+      skills: (formData.get("skills") as string).split(",").map(s => s.trim())
+    };
+    
+    updateProject(projectToEdit.id, updatedProject);
+    setProjectToEdit(null);
+    setIsEditDialogOpen(false);
   };
 
   const handleAcceptBid = (bid: Bid) => {
@@ -360,13 +383,29 @@ export default function ClientDashboard() {
               <Card className="hover-scale hover-shadow p-6 overflow-hidden border-t-4 border-t-primary/80 h-full flex flex-col hover-lift transition-all">
                 <div className="flex justify-between items-start">
                   <h3 className="text-lg font-semibold">{project.name}</h3>
-                  <Badge className="ml-2 hover-pop">
-                    {project.status === "open" 
-                      ? "Open" 
-                      : project.status === "in_progress" 
-                        ? "In Progress" 
-                        : "Completed"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge className="hover-pop">
+                      {project.status === "open" 
+                        ? "Open" 
+                        : project.status === "in_progress" 
+                          ? "In Progress" 
+                          : "Completed"}
+                    </Badge>
+                    
+                    {project.status === "open" && (
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8" 
+                        onClick={() => {
+                          setProjectToEdit(project);
+                          setIsEditDialogOpen(true);
+                        }}
+                      >
+                        ✏️
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <p className="text-muted-foreground mt-2 line-clamp-3">{project.description}</p>
                 <div className="mt-4 space-y-2 mb-auto">
@@ -454,13 +493,21 @@ export default function ClientDashboard() {
                                   <Download className="h-4 w-4" />
                                 </a>
                               </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => deleteProjectFile(project.id, file.id, "client")}
-                              >
-                                <X className="h-4 w-4 text-red-500" />
-                              </Button>
+                              
+                              {/* Only allow deletion of files uploaded by the client */}
+                              {file.uploadedBy === "client" && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => {
+                                    if (confirm("Are you sure you want to delete this file?")) {
+                                      deleteProjectFile(project.id, file.id, "client");
+                                    }
+                                  }}
+                                >
+                                  <X className="h-4 w-4 text-red-500" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -680,6 +727,43 @@ export default function ClientDashboard() {
       </Dialog>
     )}
 
+    {projectToEdit && (
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Edit Project</DialogTitle>
+          </DialogHeader>
+          <form id="edit-project-form" onSubmit={handleEditProject} className="space-y-4 flex-1 overflow-y-auto pr-1">
+            <div>
+              <label className="text-sm font-medium">Project Name</label>
+              <Input name="name" defaultValue={projectToEdit.name} required />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Description</label>
+              <Textarea name="description" defaultValue={projectToEdit.description} required />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Budget (₹)</label>
+              <Input type="number" name="budget" defaultValue={projectToEdit.budget} required min={1} />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Timeline (days)</label>
+              <Input type="number" name="timeline" defaultValue={projectToEdit.timeline} required min={1} />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Required Skills (comma-separated)</label>
+              <Input name="skills" defaultValue={projectToEdit.skills.join(", ")} required />
+            </div>
+          </form>
+          <div className="pt-4 border-t mt-4 sticky bottom-0 bg-background">
+            <Button type="submit" form="edit-project-form" className="w-full">
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
+
     {/* Chat button */}
     <motion.div
       className="fixed bottom-4 right-4 z-40"
@@ -695,7 +779,7 @@ export default function ClientDashboard() {
     </motion.div>
     
     {/* Chat component */}
-    <Chat isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+    <Chat isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} userRole="client" />
   </div>
   );
 }
