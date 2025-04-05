@@ -24,7 +24,7 @@ export default function PaymentSuccess() {
   const { theme, setTheme } = useTheme();
   const [userRole, setUserRole] = useState("freelancer");
   const [mounted, setMounted] = useState(false);
-  const { getProjectById, updatePaymentStatus } = useProjectStore();
+  const { getProjectById, updatePaymentStatus, bids, updateFreelancerEarnings } = useProjectStore();
   const [showConfetti, setShowConfetti] = useState(true);
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
   
@@ -35,10 +35,24 @@ export default function PaymentSuccess() {
     }
 
     if (projectId) {
+      // Update payment status
       updatePaymentStatus(projectId, "paid");
+      
+      // Get the project and accepted bid
       const project = getProjectById(projectId);
       if (project) {
         setProjectName(project.name);
+        
+        // Find the accepted bid
+        const acceptedBid = bids.find(bid => 
+          bid.projectId === projectId && 
+          bid.status === "accepted"
+        );
+        
+        // Update freelancer's earnings
+        if (acceptedBid) {
+          updateFreelancerEarnings(acceptedBid.freelancerId, acceptedBid.amount);
+        }
       }
     }
     
@@ -69,7 +83,7 @@ export default function PaymentSuccess() {
       clearTimeout(timer);
       window.removeEventListener('resize', handleResize);
     };
-  }, [projectId, getProjectById, updatePaymentStatus]);
+  }, [projectId, getProjectById, updatePaymentStatus, bids, updateFreelancerEarnings]);
   
   const handleRoleChange = (role: string) => {
     setUserRole(role);

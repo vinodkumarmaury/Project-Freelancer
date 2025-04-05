@@ -11,6 +11,10 @@ import ClientDashboard from "@/components/ClientDashboard";
 
 const MotionButton = motion(Button);
 
+const handleThemeChange = (theme: string) => {
+  document.documentElement.style.setProperty("--primary", theme);
+};
+
 export default function Home() {
   const { theme, setTheme } = useTheme(); 
   const [userRole, setUserRole] = useState("freelancer");
@@ -88,7 +92,10 @@ export default function Home() {
             <MotionButton
               variant="ghost"
               size="icon"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              onClick={() => {
+                setTheme(theme === "dark" ? "light" : "dark");
+                handleThemeChange(theme === "dark" ? "light" : "dark");
+              }}
               className="rounded-full hover:bg-muted hover-pop"
               whileHover={{ rotate: 15, transition: { duration: 0.2 } }}
             >

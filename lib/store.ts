@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+export interface ProjectFile {
+  name: string;
+  size: number;
+  type: string;
+  url: string;
+  uploadDate: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -14,6 +22,7 @@ export interface Project {
   submissionStatus?: "pending" | "submitted" | "approved";
   submissionUrl?: string;
   paymentStatus?: "pending" | "paid";
+  projectFiles?: ProjectFile[];
 }
 
 export interface Bid {
@@ -46,11 +55,18 @@ export interface FreelancerRating {
   averageRating: number;
 }
 
+export interface Freelancer {
+  id: string;
+  name: string;
+  totalEarnings: number;
+}
+
 interface ProjectStore {
   projects: Project[];
   bids: Bid[];
   projectFeedbacks: ProjectFeedback[];
   freelancerRatings: FreelancerRating[];
+  freelancers: Freelancer[];
   
   addProject: (project: Project) => void;
   addBid: (bid: Bid) => void;
@@ -66,6 +82,7 @@ interface ProjectStore {
   updateFreelancerRating: (freelancerId: string, rating: number, feedback?: string) => void;
   getFreelancerRating: (freelancerId: string) => number;
   updatePaymentStatus: (projectId: string, status: "pending" | "paid") => void;
+  updateFreelancerEarnings: (freelancerId: string, amount: number) => void;
 }
 
 export const useProjectStore = create<ProjectStore>()(
@@ -75,6 +92,13 @@ export const useProjectStore = create<ProjectStore>()(
       bids: [],
       projectFeedbacks: [],
       freelancerRatings: [],
+      freelancers: [
+        {
+          id: "current-freelancer-id",
+          name: "John Doe",
+          totalEarnings: 0
+        }
+      ],
       
       addProject: (project) => set((state) => ({ 
         projects: [...state.projects, project] 
@@ -173,6 +197,15 @@ export const useProjectStore = create<ProjectStore>()(
           } : project
         )
       })),
+      
+      updateFreelancerEarnings: (freelancerId, amount) => 
+        set((state) => ({
+          freelancers: state.freelancers.map((freelancer) => 
+            freelancer.id === freelancerId 
+              ? { ...freelancer, totalEarnings: (freelancer.totalEarnings || 0) + amount } 
+              : freelancer
+          )
+        })),
     }),
     {
       name: 'project-store',

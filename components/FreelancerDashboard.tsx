@@ -11,8 +11,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Slider } from "@/components/ui/slider";
-import { GithubIcon, LinkedinIcon, Globe, Star, Search } from "lucide-react";
+import { GithubIcon, LinkedinIcon, Globe, Star, Search, CreditCard, File, Download } from "lucide-react";
 import { useProjectStore, type Project, type Bid } from "@/lib/store";
+import { toast } from "react-toastify";
+import { LineChart, Line, XAxis, YAxis, Tooltip } from "recharts";
 
 // Define the missing skillLevels object
 const skillLevels: Record<string, number> = {
@@ -59,6 +61,12 @@ const completedProjects: CompletedProject[] = [
   },
 ];
 
+const chartData = [
+  { name: "Jan", earnings: 400 },
+  { name: "Feb", earnings: 300 },
+  { name: "Mar", earnings: 500 },
+];
+
 export default function FreelancerDashboard() {
   const {
     projects,
@@ -67,6 +75,7 @@ export default function FreelancerDashboard() {
     getBidsForProject,
     submitProject,
     getProjectFeedbackForFreelancer,
+    freelancers, // Add this
   } = useProjectStore();
   const [rating, setRating] = useState(4.5);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -76,6 +85,9 @@ export default function FreelancerDashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionUrl, setSubmissionUrl] = useState("");
   const [projectToSubmit, setProjectToSubmit] = useState<Project | null>(null);
+
+  const currentFreelancer = freelancers.find(f => f.id === "current-freelancer-id");
+  const totalEarnings = currentFreelancer?.totalEarnings || 0;
 
   const myBids = bids.filter((bid) => bid.freelancerId === "current-freelancer-id");
 
@@ -109,6 +121,7 @@ export default function FreelancerDashboard() {
     };
 
     addBid(newBid);
+    toast.success("New bid received for your project!");
     setSelectedProject(null);
     setIsSubmitting(false);
   };
@@ -120,6 +133,20 @@ export default function FreelancerDashboard() {
     setProjectToSubmit(null);
     setSubmissionUrl("");
   };
+
+  const handleSaveProject = (projectId: string) => {
+    const savedProjects = JSON.parse(localStorage.getItem("savedProjects") || "[]");
+    localStorage.setItem("savedProjects", JSON.stringify([...savedProjects, projectId]));
+  };
+
+  useEffect(() => {
+    if (selectedProject) {
+      const viewedProjects = JSON.parse(localStorage.getItem("viewedProjects") || "[]");
+      if (!viewedProjects.includes(selectedProject.id)) {
+        localStorage.setItem("viewedProjects", JSON.stringify([...viewedProjects, selectedProject.id]));
+      }
+    }
+  }, [selectedProject]);
 
   const filteredProjects = projects
     .filter(
@@ -244,6 +271,31 @@ export default function FreelancerDashboard() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        <h2 className="text-xl font-semibold mb-4">Earnings Overview</h2>
+        <Card className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Total Earnings</p>
+              <p className="text-2xl font-bold">₹{totalEarnings}</p>
+            </div>
+            <div className="p-3 bg-primary/10 rounded-full">
+              <CreditCard className="h-6 w-6 text-primary" />
+            </div>
+          </div>
+          <LineChart width={300} height={200} data={chartData}>
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Line type="monotone" dataKey="earnings" stroke="#8884d8" />
+          </LineChart>
+        </Card>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.4 }}
       >
         <h2 className="text-xl font-semibold mb-4">Completed Projects</h2>
         <div className="grid gap-4 md:grid-cols-2">
@@ -373,7 +425,7 @@ export default function FreelancerDashboard() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.4 }}
+        transition={{ duration: 0.5, delay: 0.6 }}
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">Available Projects</h2>
@@ -456,6 +508,40 @@ export default function FreelancerDashboard() {
                     ))}
                   </div>
                 </div>
+
+                {project.projectFiles && project.projectFiles.length > 0 && (
+                  <div className="mt-4 border-t pt-4">
+                    <h4 className="font-semibold text-sm mb-2">Project Files</h4>
+                    <div className="space-y-2">
+                      {project.projectFiles.map((file, index) => (
+                        <div 
+                          key={index}
+                          className="flex items-center p-2 bg-muted/40 rounded-md hover:bg-muted transition-colors"
+                        >
+                          <div className="p-2 bg-primary/10 rounded-md mr-3">
+                            <File className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(file.size / 1024).toFixed(1)} KB · {new Date(file.uploadDate).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="ml-2"
+                            asChild
+                          >
+                            <a href={file.url} download={file.name} target="_blank" rel="noopener noreferrer">
+                              <Download className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 
                 {!myBids.some(bid => bid.projectId === project.id) ? (
                   <Dialog>
@@ -520,6 +606,13 @@ export default function FreelancerDashboard() {
                     Bid Placed
                   </Button>
                 )}
+                {/* <Button
+                  className="hover-scale hover-shadow w-full mt-4"
+                  variant="outline"
+                  onClick={() => handleSaveProject(project.id)}
+                >
+                  Save Project
+                </Button> */}
               </Card>
             ))
           ) : (
@@ -533,7 +626,7 @@ export default function FreelancerDashboard() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.6 }}
+        transition={{ duration: 0.5, delay: 0.8 }}
       >
         <h2 className="text-xl font-semibold mb-4">My Bids</h2>
         <div className="grid gap-4 md:grid-cols-2">

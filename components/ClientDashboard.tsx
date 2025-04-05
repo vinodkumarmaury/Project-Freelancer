@@ -9,9 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Star, PlusCircle, ArrowRight } from "lucide-react";
+import { Star, PlusCircle, ArrowRight, MessageCircle } from "lucide-react";
 import { useProjectStore, type Project, type Bid, type ProjectFeedback } from "@/lib/store";
 import { loadStripe } from '@stripe/stripe-js';
+import Chat from "@/components/Chat";
+import FileUpload from "@/components/FileUpload";
 
 // Animation variants
 const containerVariants = {
@@ -64,6 +66,60 @@ export default function ClientDashboard() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isPaymentProcessing, setIsPaymentProcessing] = useState(false);
   const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedSkills, setSelectedSkills] = useState<Array<{label: string, value: string}>>([]);
+  const [budgetRange, setBudgetRange] = useState<[number, number]>([0, 10000]);
+  const [timelineRange, setTimelineRange] = useState<[number, number]>([1, 90]);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  const skillOptions = [
+    { label: "React", value: "React" },
+    { label: "Node.js", value: "Node.js" },
+    { label: "TypeScript", value: "TypeScript" },
+    { label: "Next.js", value: "Next.js" },
+    { label: "Python", value: "Python" },
+    { label: "Java", value: "Java" },
+    { label: "AWS", value: "AWS" },
+    { label: "UI/UX Design", value: "UI/UX Design" },
+  ];
+
+  const resetFilters = () => {
+    setSearchTerm("");
+    setSelectedSkills([]);
+    setBudgetRange([0, 10000]);
+    setTimelineRange([1, 90]);
+    setStatusFilter("all");
+  };
+
+  const filteredProjects = projects.filter(project => {
+    if (searchTerm && !project.name.toLowerCase().includes(searchTerm.toLowerCase()) && 
+        !project.description.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+    
+    if (statusFilter !== "all" && project.status !== statusFilter) {
+      return false;
+    }
+    
+    if (selectedSkills.length > 0) {
+      const projectHasSelectedSkill = selectedSkills.some(selectedSkill => 
+        project.skills.includes(selectedSkill.value)
+      );
+      if (!projectHasSelectedSkill) return false;
+    }
+    
+    if (project.budget < budgetRange[0] || project.budget > budgetRange[1]) {
+      return false;
+    }
+    
+    if (project.timeline < timelineRange[0] || project.timeline > timelineRange[1]) {
+      return false;
+    }
+    
+    return true;
+  });
 
   const handleProjectSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -77,7 +133,7 @@ export default function ClientDashboard() {
       timeline: Number(formData.get("timeline")),
       skills: (formData.get("skills") as string).split(",").map(s => s.trim()),
       status: "open",
-      clientId: "current-user-id", // In a real app, this would come from auth
+      clientId: "current-user-id",
       createdAt: new Date().toISOString(),
     };
 
@@ -105,19 +161,11 @@ export default function ClientDashboard() {
         return;
       }
 
-      // Initialize Stripe
       const stripe = await stripePromise;
       if (!stripe) {
         throw new Error('Failed to load Stripe');
       }
       
-      console.log('Creating payment session for:', {
-        projectId: project.id,
-        bidId: acceptedBid.id,
-        amount: acceptedBid.amount * 100
-      });
-      
-      // Create a checkout session
       const response = await fetch('/api/create-payment-intent', {
         method: 'POST',
         headers: {
@@ -131,13 +179,11 @@ export default function ClientDashboard() {
       });
       
       const responseText = await response.text();
-      console.log('API response:', responseText);
       
       let data;
       try {
         data = JSON.parse(responseText);
       } catch (e) {
-        console.error('Failed to parse response as JSON:', responseText.substring(0, 200));
         throw new Error('Invalid server response');
       }
       
@@ -151,9 +197,6 @@ export default function ClientDashboard() {
         throw new Error('No session ID received from server');
       }
       
-      console.log('Redirecting to checkout with sessionId:', sessionId);
-      
-      // Redirect to Stripe Checkout using the session ID
       const result = await stripe.redirectToCheckout({ sessionId });
       
       if (result.error) {
@@ -161,7 +204,6 @@ export default function ClientDashboard() {
       }
       
     } catch (error: any) {
-      console.error('Payment error:', error);
       alert(`Payment failed: ${error.message || 'Unknown error'}`);
     } finally {
       setIsPaymentProcessing(false);
@@ -216,21 +258,15 @@ export default function ClientDashboard() {
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="flex justify-between items-center"
+        className="flex justify-end items-center"
       >
-        <h2 className="text-2xl font-bold hover-border-animation inline-block">My Projects</h2>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="hover-scale hover-bg-primary flex items-center gap-2">
-              <PlusCircle className="w-4 h-4" />
-              Create New Project
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
+
+          <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto flex flex-col">
             <DialogHeader>
               <DialogTitle>Create a New Project</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleProjectSubmit} className="space-y-4">
+            <form id="project-form" onSubmit={handleProjectSubmit} className="space-y-4 flex-1 overflow-y-auto pr-1">
               <div>
                 <label className="text-sm font-medium">Project Name</label>
                 <Input name="name" required />
@@ -251,281 +287,374 @@ export default function ClientDashboard() {
                 <label className="text-sm font-medium">Required Skills (comma-separated)</label>
                 <Input name="skills" required placeholder="React, Node.js, TypeScript" />
               </div>
-              <Button type="submit" className="w-full">Create Project</Button>
+              <div>
+                <label className="text-sm font-medium">Project Files (Optional)</label>
+                <div className="mt-2">
+                  <FileUpload onUpload={(files) => console.log('Uploaded files:', files)} />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Upload any relevant files for the project requirements
+                </p>
+              </div>
             </form>
-          </DialogContent>
-        </Dialog>
-      </motion.div>
-
-      {clientProjects.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-        >
-          <Card className="p-12 flex flex-col items-center justify-center text-center hover-glow">
-            <div className="rounded-full bg-primary/10 p-6 mb-4 hover-float">
-              <PlusCircle className="w-8 h-8 text-primary" />
-            </div>
-            <h3 className="text-xl font-medium mb-2">No projects yet</h3>
-            <p className="text-muted-foreground mb-6 max-w-md">
-              Create your first project to start receiving bids from talented freelancers
-            </p>
-            <Button onClick={() => setIsDialogOpen(true)} className="hover-ripple">Create Your First Project</Button>
-          </Card>
-        </motion.div>
-      ) : (
-        <motion.div 
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          className="grid gap-6 md:grid-cols-2"
-        >
-          {clientProjects.map((project) => {
-            const projectBids = getBidsForProject(project.id);
-            
-            return (
-              <motion.div key={project.id} variants={itemVariants}>
-                <Card className="hover-scale hover-shadow p-6 overflow-hidden border-t-4 border-t-primary/80 h-full flex flex-col hover-lift transition-all">
-                  <div className="flex justify-between items-start">
-                    <h3 className="text-lg font-semibold">{project.name}</h3>
-                    <Badge className="ml-2 hover-pop">
-                      {project.status === "open" 
-                        ? "Open" 
-                        : project.status === "in_progress" 
-                          ? "In Progress" 
-                          : "Completed"}
-                    </Badge>
-                  </div>
-                  <p className="text-muted-foreground mt-2 line-clamp-3">{project.description}</p>
-                  <div className="mt-4 space-y-2 mb-auto">
-                    <div className="flex justify-between hover-border-animation">
-                      <span className="text-sm font-medium">Budget:</span>
-                      <span className="font-medium">₹{project.budget}</span>
-                    </div>
-                    <div className="flex justify-between hover-border-animation">
-                      <span className="text-sm font-medium">Timeline:</span>
-                      <span>{project.timeline} days</span>
-                    </div>
-                  </div>
-                  <div className="mt-4 border-t pt-4">
-                    <div className="flex flex-wrap gap-2">
-                      {project.skills.map((skill) => (
-                        <Badge key={skill} variant="outline" className="hover-pop">
-                          {skill}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-
-                  {project.status === "in_progress" && project.submissionStatus === "submitted" && (
-                    <div className="mt-4 p-4 border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950 rounded-lg hover-glow">
-                      <h4 className="font-medium text-blue-700 dark:text-blue-300">Project Submitted</h4>
-                      <p className="text-sm mt-1 text-blue-600 dark:text-blue-400">
-                        The developer has completed and submitted this project for your review.
-                      </p>
-                      <div className="flex flex-col gap-2 mt-3">
-                        <div className="flex gap-2">
-                          {project.paymentStatus !== "paid" && (
-                            <Button
-                              size="sm"
-                              onClick={() => handlePayment(project)}
-                              disabled={isPaymentProcessing}
-                              className="relative overflow-hidden hover-ripple"
-                            >
-                              {isPaymentProcessing ? (
-                                <span className="flex items-center">
-                                  <span className="animate-spin mr-2 h-4 w-4 border-2 border-t-transparent border-white rounded-full"></span>
-                                  Processing...
-                                </span>
-                              ) : (
-                                "Pay Now"
-                              )}
-                            </Button>
-                          )}
-                          
-                          {project.paymentStatus === "paid" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleReview(project)}
-                              className="hover-slide-cta group"
-                            >
-                              Review Project
-                              <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
-                            </Button>
-                          )}
-                          
-                          {project.submissionUrl && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              asChild
-                              className="hover-slide-cta group"
-                            >
-                              <a href={project.submissionUrl} target="_blank" rel="noopener noreferrer">
-                                View Submission
-                                <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
-                              </a>
-                            </Button>
-                          )}
-                        </div>
-                        
-                        {project.paymentStatus !== "paid" ? (
-                          <p className="text-xs text-muted-foreground">
-                            Please complete payment to review the project
-                          </p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            Payment complete. You can now review the project.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {projectBids.length > 0 && (
-                    <div className="mt-6">
-                      <h4 className="font-semibold mb-3">Bids Received</h4>
-                      <div className="space-y-4">
-                        {projectBids.map((bid) => (
-                          <div key={bid.id} className="border rounded-lg p-4 hover-card-3d">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="font-medium">Bid Amount: ₹{bid.amount}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  Timeline: {bid.timeline} days
-                                </p>
-                              </div>
-                              <Badge variant={
-                                bid.status === "accepted"
-                                  ? "secondary"
-                                  : bid.status === "rejected"
-                                  ? "destructive"
-                                  : "outline"
-                              } className="hover-pop">
-                                {bid.status.charAt(0).toUpperCase() + bid.status.slice(1)}
-                              </Badge>
-                            </div>
-                            <p className="mt-2 text-sm">{bid.proposal}</p>
-                            
-                            {project.status === "open" && bid.status === "pending" && (
-                              <div className="mt-4 flex gap-2">
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleAcceptBid(bid)}
-                                >
-                                  Accept Bid
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => updateBidStatus(bid.id, "rejected")}
-                                >
-                                  Reject
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {project.status === "open" && projectBids.length === 0 && (
-                    <div className="mt-6 text-center p-4 border rounded-lg border-dashed">
-                      <p className="text-muted-foreground">No bids received yet.</p>
-                    </div>
-                  )}
-                </Card>
-              </motion.div>
-            );
-          })}
-        </motion.div>
-      )}
-
-      {selectedProject && (
-        <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Review & Feedback</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-6">
-              <div className="space-y-4 pb-4 border-b">
-                <h3 className="font-medium">Project Feedback</h3>
-                <div>
-                  <label className="text-sm font-medium">Project Rating</label>
-                  <div className="flex gap-1 mt-2">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star
-                        key={star}
-                        className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 ${
-                          star <= projectRating ? "text-yellow-400 fill-current" : "text-gray-300"
-                        }`}
-                        onClick={() => setProjectRating(star)}
-                      />
-                    ))}
-                  </div>
-                  {projectRating > 0 && (
-                    <p className="text-sm mt-1 text-muted-foreground">
-                      {projectRating === 5 ? "Excellent" : 
-                       projectRating === 4 ? "Very Good" : 
-                       projectRating === 3 ? "Good" : 
-                       projectRating === 2 ? "Fair" : "Poor"}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Project Feedback</label>
-                  <Textarea
-                    value={projectFeedback}
-                    onChange={(e) => setProjectFeedback(e.target.value)}
-                    placeholder="How was the quality of the delivered project?"
-                    className="mt-2"
-                    rows={3}
-                  />
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <h3 className="font-medium">Developer Profile Review (Optional)</h3>
-                <div>
-                  <label className="text-sm font-medium">Developer Rating</label>
-                  <div className="flex gap-1 mt-2">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star
-                        key={star}
-                        className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 ${
-                          star <= profileRating ? "text-yellow-400 fill-current" : "text-gray-300"
-                        }`}
-                        onClick={() => setProfileRating(star)}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Profile Feedback</label>
-                  <Textarea
-                    value={profileFeedback}
-                    onChange={(e) => setProfileFeedback(e.target.value)}
-                    placeholder="How was your overall experience with this developer?"
-                    className="mt-2"
-                    rows={3}
-                  />
-                </div>
-              </div>
-
-              <Button
-                className="w-full"
-                disabled={projectRating === 0}
-                onClick={submitFeedback}
-              >
-                Submit Review & Complete Project
+            <div className="pt-4 border-t mt-4 sticky bottom-0 bg-background">
+              <Button type="submit" form="project-form" className="w-full">
+                Create Project
               </Button>
             </div>
           </DialogContent>
         </Dialog>
-      )}
+      </motion.div>
+      
+    <div className="flex flex-wrap gap-3">
+      <Button 
+        onClick={() => setIsDialogOpen(true)} 
+        variant="default"
+        className="hover-scale hover-shadow flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2"
+      >
+        <PlusCircle className="w-4 h-4 mr-1" />
+        Create New Project
+      </Button>
     </div>
+
+    {filteredProjects.length === 0 && clientProjects.length > 0 ? (
+      <Card className="p-8 text-center">
+        <p className="text-muted-foreground mb-4">No projects match your filters</p>
+        <Button onClick={resetFilters} variant="outline">Clear Filters</Button>
+      </Card>
+    ) : (
+      <motion.div 
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="grid gap-6 md:grid-cols-2"
+      >
+        {filteredProjects.map((project) => {
+          const projectBids = getBidsForProject(project.id);
+          
+          return (
+            <motion.div key={project.id} variants={itemVariants}>
+              <Card className="hover-scale hover-shadow p-6 overflow-hidden border-t-4 border-t-primary/80 h-full flex flex-col hover-lift transition-all">
+                <div className="flex justify-between items-start">
+                  <h3 className="text-lg font-semibold">{project.name}</h3>
+                  <Badge className="ml-2 hover-pop">
+                    {project.status === "open" 
+                      ? "Open" 
+                      : project.status === "in_progress" 
+                        ? "In Progress" 
+                        : "Completed"}
+                  </Badge>
+                </div>
+                <p className="text-muted-foreground mt-2 line-clamp-3">{project.description}</p>
+                <div className="mt-4 space-y-2 mb-auto">
+                  <div className="flex justify-between hover-border-animation">
+                    <span className="text-sm font-medium">Budget:</span>
+                    <span className="font-medium">₹{project.budget}</span>
+                  </div>
+                  <div className="flex justify-between hover-border-animation">
+                    <span className="text-sm font-medium">Timeline:</span>
+                    <span>{project.timeline} days</span>
+                  </div>
+                </div>
+                <div className="mt-4 border-t pt-4">
+                  <div className="flex flex-wrap gap-2">
+                    {project.skills.map((skill) => (
+                      <Badge key={skill} variant="outline" className="hover-pop">
+                        {skill}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                {project.status === "in_progress" && (
+                  <div className="mt-4 border-t pt-4">
+                    <h4 className="text-sm font-medium mb-2">Project Progress</h4>
+                    <div className="relative">
+                      {/* Progress bar */}
+                      <div className="h-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-12">
+                        <div 
+                          className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-700"
+                          style={{ 
+                            width: project.submissionStatus === "submitted" 
+                              ? "75%" 
+                              : project.status === "in_progress" 
+                                ? "50%" 
+                                : "25%" 
+                          }}
+                        ></div>
+                      </div>
+                      
+                      {/* Progress milestones with improved positioning */}
+                      <div className="w-full absolute top-[-8px]">
+                        {["Bid Accepted", "In Progress", "Submitted", "Completed"].map((milestone, index) => {
+                          const isActive = (
+                            (index === 0) || 
+                            (index === 1 && project.status === "in_progress") ||
+                            (index === 2 && project.submissionStatus === "submitted") ||
+                            (index === 3 && project.status === "completed")
+                          );
+                          
+                          // Position dots properly at 0%, 33%, 66%, and 100%
+                          const positions = [0, 33, 66, 100];
+                          
+                          return (
+                            <div 
+                              key={milestone}
+                              className="absolute"
+                              style={{  
+                                top: "2.8px",
+                                left: `${positions[index]}%`,
+                                width: index === 0 ? '80px' : index === 3 ? '80px' : '90px',
+                                marginLeft: index === 0 ? '-5px' : index === 3 ? '-75px' : '-45px'
+                              }}
+                            >
+                              <div 
+                                className={`w-4 h-4 mx-auto rounded-full border-2 ${
+                                  isActive 
+                                    ? "bg-primary border-primary" 
+                                    : "bg-background border-gray-300 dark:border-gray-600"
+                                }`}
+                              ></div>
+                              <div 
+                                className={`text-center whitespace-normal text-xs mt-6 ${
+                                  isActive ? "font-medium text-primary" : "text-muted-foreground"
+                                }`}
+                              >
+                                {milestone}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {project.status === "in_progress" && project.submissionStatus === "submitted" && (
+                  <div className="mt-4 p-4 border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950 rounded-lg hover-glow">
+                    <h4 className="font-medium text-blue-700 dark:text-blue-300">Project Submitted</h4>
+                    <p className="text-sm mt-1 text-blue-600 dark:text-blue-400">
+                      The developer has completed and submitted this project for your review.
+                    </p>
+                    <div className="flex flex-col gap-2 mt-3">
+                      <div className="flex gap-2">
+                        {project.paymentStatus !== "paid" && (
+                          <Button
+                            size="sm"
+                            onClick={() => handlePayment(project)}
+                            disabled={isPaymentProcessing}
+                            className="relative overflow-hidden hover-ripple"
+                          >
+                            {isPaymentProcessing ? (
+                              <span className="flex items-center">
+                                <span className="animate-spin mr-2 h-4 w-4 border-2 border-t-transparent border-white rounded-full"></span>
+                                Processing...
+                              </span>
+                            ) : (
+                              "Pay Now"
+                            )}
+                          </Button>
+                        )}
+                        
+                        {project.paymentStatus === "paid" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleReview(project)}
+                            className="hover-slide-cta group"
+                          >
+                            Review Project
+                            <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
+                          </Button>
+                        )}
+                        
+                        {project.submissionUrl && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            asChild
+                            className="hover-slide-cta group"
+                          >
+                            <a href={project.submissionUrl} target="_blank" rel="noopener noreferrer">
+                              View Submission
+                              <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
+                            </a>
+                          </Button>
+                        )}
+                      </div>
+                      
+                      {project.paymentStatus !== "paid" ? (
+                        <p className="text-xs text-muted-foreground">
+                          Please complete payment to review the project
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Payment complete. You can now review the project.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {projectBids.length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="font-semibold mb-3">Bids Received</h4>
+                    <div className="space-y-4">
+                      {projectBids.map((bid) => (
+                        <div key={bid.id} className="border rounded-lg p-4 hover-card-3d">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-medium">Bid Amount: ₹{bid.amount}</p>
+                              <p className="text-sm text-muted-foreground">
+                                Timeline: {bid.timeline} days
+                              </p>
+                            </div>
+                            <Badge variant={
+                              bid.status === "accepted"
+                                ? "secondary"
+                                : bid.status === "rejected"
+                                ? "destructive"
+                                : "outline"
+                            } className="hover-pop">
+                              {bid.status.charAt(0).toUpperCase() + bid.status.slice(1)}
+                            </Badge>
+                          </div>
+                          <p className="mt-2 text-sm">{bid.proposal}</p>
+                          
+                          {project.status === "open" && bid.status === "pending" && (
+                            <div className="mt-4 flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleAcceptBid(bid)}
+                              >
+                                Accept Bid
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateBidStatus(bid.id, "rejected")}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {project.status === "open" && projectBids.length === 0 && (
+                  <div className="mt-6 text-center p-4 border rounded-lg border-dashed">
+                    <p className="text-muted-foreground">No bids received yet.</p>
+                  </div>
+                )}
+              </Card>
+            </motion.div>
+          );
+        })}
+      </motion.div>
+    )}
+
+    {selectedProject && (
+      <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Review & Feedback</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="space-y-4 pb-4 border-b">
+              <h3 className="font-medium">Project Feedback</h3>
+              <div>
+                <label className="text-sm font-medium">Project Rating</label>
+                <div className="flex gap-1 mt-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star
+                      key={star}
+                      className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 ${
+                        star <= projectRating ? "text-yellow-400 fill-current" : "text-gray-300"
+                      }`}
+                      onClick={() => setProjectRating(star)}
+                    />
+                  ))}
+                </div>
+                {projectRating > 0 && (
+                  <p className="text-sm mt-1 text-muted-foreground">
+                    {projectRating === 5 ? "Excellent" : 
+                     projectRating === 4 ? "Very Good" : 
+                     projectRating === 3 ? "Good" : 
+                     projectRating === 2 ? "Fair" : "Poor"}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-sm font-medium">Project Feedback</label>
+                <Textarea
+                  value={projectFeedback}
+                  onChange={(e) => setProjectFeedback(e.target.value)}
+                  placeholder="How was the quality of the delivered project?"
+                  className="mt-2"
+                  rows={3}
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <h3 className="font-medium">Developer Profile Review (Optional)</h3>
+              <div>
+                <label className="text-sm font-medium">Developer Rating</label>
+                <div className="flex gap-1 mt-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star
+                      key={star}
+                      className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 ${
+                        star <= profileRating ? "text-yellow-400 fill-current" : "text-gray-300"
+                      }`}
+                      onClick={() => setProfileRating(star)}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Profile Feedback</label>
+                <Textarea
+                  value={profileFeedback}
+                  onChange={(e) => setProfileFeedback(e.target.value)}
+                  placeholder="How was your overall experience with this developer?"
+                  className="mt-2"
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <Button
+              className="w-full"
+              disabled={projectRating === 0}
+              onClick={submitFeedback}
+            >
+              Submit Review & Complete Project
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
+
+    {/* Chat button */}
+    <motion.div
+      className="fixed bottom-4 right-4 z-40"
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+    >
+      <Button
+        className="rounded-full w-12 h-12 shadow-lg hover-glow"
+        onClick={() => setIsChatOpen(true)}
+      >
+        <MessageCircle className="h-5 w-5" />
+      </Button>
+    </motion.div>
+    
+    {/* Chat component */}
+    <Chat isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+  </div>
   );
 }
